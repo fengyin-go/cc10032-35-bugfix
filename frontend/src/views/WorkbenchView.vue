@@ -90,6 +90,10 @@
       <span>共 {{ total }} 条{{ meta.name }}记录</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
     </footer>
+
+    <AggregateSinkPanel v-if="meta.key === 'aggregate_sink'" />
+    <SinkOutputPanel v-if="meta.key === 'sink_output'" />
+    <AccessOverviewPanel v-if="meta.key === 'aggregate_sink' || meta.key === 'sink_output'" />
   </section>
 </template>
 
@@ -104,6 +108,9 @@ import {
   runAction as applyAction,
 } from '@/api/backend-service'
 import type { EntryRow } from '@/data/types'
+import AccessOverviewPanel from '@/components/AccessOverviewPanel.vue'
+import AggregateSinkPanel from '@/components/AggregateSinkPanel.vue'
+import SinkOutputPanel from '@/components/SinkOutputPanel.vue'
 
 const props = defineProps<{ moduleKey: string }>()
 const meta = moduleMeta(props.moduleKey)

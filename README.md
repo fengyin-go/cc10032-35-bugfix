@@ -71,6 +71,27 @@ npm run dev
 | 调试追踪 | `debug_trace` | 调试会话 | 会话名称、目标算子、采样数据 |
 | 聚合落库 | `aggregate_sink` | 聚合任务 | 任务名称、源指标集、聚合粒度 |
 
+## 聚合落库 → 结果落地数据流
+
+聚合落库逐条写入并判定写入状态，检查点只覆盖**已成功写入**的分区；失败记录留在输出表
+并进入输出完整性报告。结果落地按检查点读取数据，缺记录时阻止任务完成。
+
+| 接口 | 说明 |
+| --- | --- |
+| `POST /api/flows/aggregate-sink/{task}/flush` | 逐条落库，生成/更新检查点；`submission_key` 保证重复提交只生效一次 |
+| `GET /api/flows/aggregate-sink/{task}/integrity` | 输出完整性报告：成功分区、失败分区、失败记录、缺失分区 |
+| `GET /api/flows/aggregate-sink/{task}/checkpoints` | 该任务唯一的完整可回放检查点版本与修复记录 |
+| `POST /api/flows/aggregate-sink/{task}/retry` | 重试失败记录：`append` 在原检查点追加修复，`rebuild` 回退重建同一检查点 |
+| `GET /api/flows/sink-output/checkpoints/{checkpoint_id}` | 结果落地按检查点核对成功分区与失败记录 |
+| `POST /api/flows/sink-output/{task}/complete` | 完成闸口：检查点缺记录或仍有失败记录时拒绝完成 |
+| `GET /api/flows/access/overview` | 权限页面：团队私有 / 受控只读两类范围及当前团队可见记录 |
+
+团队上下文用查询参数 `team` 或请求头 `X-Operator-Team` 传递，缺省为值守团队「数据工程组」：
+
+- 团队私有记录仅所属团队可见，越权读取返回 403 且不返回数据；
+- 受控只读记录（如共享的聚合落库数据）可被其他团队查看，写操作返回 403，记录保持原归属和原状态；
+- 前端「聚合落库」「结果落地」页面下方分别展示失败分区和检查点覆盖核对，并共用权限页面切换的团队。
+
 ## 约定
 
 - 全部模块共享`frontend/src/views/WorkbenchView.vue|tsx`和一套资源路由。

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import copy
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -89,6 +90,10 @@ class Store:
         self._channels: dict[str, DataChannelEvent] = {}
         # 失败恢复记录：recovery_id → FailureRecovery
         self._failures: dict[str, FailureRecovery] = {}
+        # 幂等登记表：提交键 → 已登记记录 id
+        self._submissions: dict[str, tuple[str, int]] = {}
+        # 并发保护：写动作、检查点重建、重试都在锁内完成，避免并发重复提交
+        self.lock = threading.RLock()
 
     # ---- 跨模块数据通道 ----
 
@@ -213,6 +218,33 @@ class Store:
             "resolved": resolved_count,
             "escalated": escalated_count,
         }
+
+    # ---- 幂等登记 ----
+
+    def find_submission(self, module: str, key: str | None) -> dict[str, Any] | None:
+        """按提交键查找已登记记录，保证重复提交只生效一次。"""
+        if not key:
+            return None
+        entry = self._submissions.get(f"{module}:{key}")
+        if entry is None:
+            return None
+        return self.find(module, entry["id"])
+
+    def remember_submission(self, module: str, key: str | None, entry_id: int) -> None:
+        if not key:
+            return
+        slot = f"{module}:{key}"
+        record = self._submissions.get(slot)
+        if record is None:
+            self._submissions[slot] = {"id": entry_id, "count": 1}
+        elif record["id"] == entry_id:
+            record["count"] += 1
+
+    def submission_count(self, module: str, key: str | None) -> int:
+        if not key:
+            return 0
+        record = self._submissions.get(f"{module}:{key}")
+        return int(record["count"]) if record else 0
 
     # ---- 基础 CRUD ----
 

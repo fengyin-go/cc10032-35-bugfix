@@ -243,7 +243,7 @@ class TestJoinWindowSemantics:
         left = _make_events(8)
         right = _make_events(8, base_ts=time.time() + 2)
         results = perform_stream_join(left, right, "user_id", 15.0)
-        agg = aggregate_and_sink_join_results(results, "聚合落库样例1")
+        agg = aggregate_and_sink_join_results(results, "agg_order_daily")
         assert agg["join_total"] == len(results)
         assert agg["match_rate"] >= 0
 

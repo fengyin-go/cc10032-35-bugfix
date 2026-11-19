@@ -19,11 +19,13 @@ class ActionResult(BaseModel):
     ok: bool
     message: str
     entry: dict[str, Any] | None = None
+    code: str | None = None
 
 
 class EntryPayload(BaseModel):
     values: dict[str, Any] = Field(default_factory=dict)
     remark: str | None = None
+    submission_key: str | None = None
 
 
 class ActionPayload(BaseModel):

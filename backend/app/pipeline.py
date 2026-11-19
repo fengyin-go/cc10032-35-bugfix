@@ -297,7 +297,13 @@ def aggregate_and_sink_join_results(
     join_results: list[JoinResult],
     sink_task_name: str,
 ) -> dict[str, Any]:
-    """将双流关联结果聚合后写入落库任务。"""
+    """将双流关联结果聚合后写入落库任务。
+
+    走聚合落库的正式链路：逐条写入 + 只把成功分区写进检查点，
+    关联统计结果作为落库记录挂在 sink_output 上，不再往 aggregate_sink 塞伪任务行。
+    """
+    from app.services import service_for
+
     matched = sum(1 for jr in join_results if jr.matched)
     unmatched = len(join_results) - matched
     agg_entry = {
@@ -308,14 +314,21 @@ def aggregate_and_sink_join_results(
         "match_rate": matched / max(len(join_results), 1),
         "timestamp": time.time(),
     }
-    agg_rows = store.rows("aggregate_sink")
-    agg_rows.append(agg_entry)
-    # 更新对应聚合任务状态
-    for row in store.rows("aggregate_sink"):
-        if row.get("任务名称") == sink_task_name and row.get("status") == "待启动":
-            row["status"] = "运行中"
-            row["pending"] = True
-            break
+    records = [
+        {
+            "join_key": jr.left_key,
+            "matched": jr.matched,
+            "window_start": jr.window_start,
+            "window_end": jr.window_end,
+            "metrics": {"matched": 1 if jr.matched else 0},
+        }
+        for jr in join_results
+    ]
+    flush = service_for("aggregate_sink").batch_flush_to_target(
+        sink_task_name, records)
+    agg_entry["written"] = flush.get("written", 0)
+    agg_entry["failed"] = flush.get("failed", 0)
+    agg_entry["checkpoint_id"] = flush.get("checkpoint_id")
     return agg_entry
 
 
@@ -660,7 +673,7 @@ def run_end_to_end_pipeline(
         join_results = perform_stream_join(
             left_events, right_events, "user_id", 15.0, "inner",
         )
-        agg_result = aggregate_and_sink_join_results(join_results, "聚合落库样例1")
+        agg_result = aggregate_and_sink_join_results(join_results, "agg_order_daily")
         cp = create_checkpoint_snapshot("join_stream_agg", agg_result)
         report["chain3_join_checkpoint"] = {
             "join_total": len(join_results),

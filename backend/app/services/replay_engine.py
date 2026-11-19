@@ -48,6 +48,19 @@ class ReplayEngineService(BaseModuleService):
         if cp_row.get("status") != "已启用":
             return {"ok": False, "error": f"检查点「{checkpoint_id}」未启用"}
 
+        # 只有完整可回放的版本才能作为消费来源：失败分区未修复时拒绝回放
+        if cp_row.get("incomplete") or cp_row.get("pending_repair"):
+            return {
+                "ok": False,
+                "error": "检查点仍存在缺失分区或失败记录，不能作为回放版本",
+                "checkpoint_id": checkpoint_id,
+                "missing_partitions": sorted({
+                    item.get("partition", "")
+                    for item in cp_row.get("pending_repair", [])
+                    if item.get("partition")
+                }),
+            }
+
         # 2. 验证拓扑配置
         topo_found = any(
             r.get("拓扑名称") == topology_name

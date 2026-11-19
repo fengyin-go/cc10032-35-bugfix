@@ -170,7 +170,11 @@ class CheckpointMgrService(BaseModuleService):
         }
 
     def list_checkpoints_for_replay(self) -> list[dict[str, Any]]:
-        """列出可用于回放引擎消费的检查点。"""
+        """列出可用于回放引擎消费的检查点。
+
+        只暴露完整可回放的版本：聚合落库生成的检查点如果仍有失败分区
+        （``incomplete``）或缺失分区，就不能作为回放来源。
+        """
         available = [
             r for r in store.rows(self.MODULE)
             if r.get("checkpoint_id") and r.get("status") == "已启用"
@@ -178,6 +182,8 @@ class CheckpointMgrService(BaseModuleService):
         result = []
         for cp in available:
             states = cp.get("operator_states", {})
+            coverage = cp.get("success_partitions")
+            incomplete = bool(cp.get("incomplete")) or bool(cp.get("pending_repair"))
             result.append({
                 "checkpoint_id": cp.get("checkpoint_id"),
                 "config": cp.get("配置名称", ""),
@@ -185,6 +191,10 @@ class CheckpointMgrService(BaseModuleService):
                 "operators": list(states.keys()),
                 "snapshot_ts": cp.get("snapshot_ts", 0),
                 "external_path": cp.get("外部化路径", ""),
+                "replay_version": cp.get("replay_version", 1),
+                "success_partitions": coverage if coverage is not None else None,
+                "incomplete": incomplete,
+                "replayable": not incomplete,
             })
         return result
 
